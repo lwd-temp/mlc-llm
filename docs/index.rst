@@ -1,92 +1,96 @@
-.. MLC-LLM documentation master file, created by
-   sphinx-quickstart on Mon May 15 14:00:22 2023.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
-Welcome to MLC-LLM!
+👋 Welcome to MLC LLM
 ===================================
 
-`Join our Discord Server! <https://discord.gg/9Xpy2HGBuD>`_
+`Discord <https://discord.gg/9Xpy2HGBuD>`_ | `Demo <https://mlc.ai/mlc-llm>`_ | `GitHub <https://github.com/mlc-ai/mlc-llm>`_
 
-🚧 This doc is under heavy construction.
+🚧 This document is currently undergoing heavy construction.
 
-MLC LLM is the universal deployment solution that allows LLMs to run locally with native hardware acceleration on consumer devices.
+Machine Learning Compilation for LLM (MLC LLM) is a universal deployment solution that enables LLMs to run efficiently on consumer devices, leveraging native hardware acceleration like GPUs.
 
-.. _navigation:
+.. table:: MLC LLM: A universal deployment solution for large language models
+   :widths: 200, 250, 250, 250, 250
+   :align: center
 
-.. |mlc-cli-demo| image:: https://mlc.ai/blog/img/redpajama/cli.gif
-.. |web-llm-demo| image:: https://github.com/mlc-ai/web-llm/raw/main/site/img/fig/demo.gif
-.. |ios-demo| image:: https://mlc.ai/mlc-llm/gif/ios-demo.gif
-.. |android-demo| image:: https://mlc.ai/mlc-llm/gif/android-demo.gif
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
+   |                   |  AMD GPU          | NVIDIA GPU        | Apple M1/M2 GPU   | Intel GPU           |
+   +===================+===================+===================+===================+=====================+
+   |   Linux / Win     | ✅ Vulkan, ROCm   | ✅ Vulkan, CUDA   | ❌                | ✅ Vulkan           |
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
+   |   macOS           | ✅ Metal          | ❌                | ✅ Metal          | ✅ Metal            |
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
+   |   Web Browser     | ✅ WebGPU         | ✅ WebGPU         | ✅ WebGPU         | ✅ WebGPU           |
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
+   |   iOS / iPadOS    | ✅ Metal on Apple M1/M2 GPU                                                     |
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
+   |   Android         | ✅ OpenCL, Vulkan on Snapdragon, Mali GPU                                       |
+   +-------------------+-------------------+-------------------+-------------------+---------------------+
 
-Navigate by Topics
-------------------
 
-MLC LLM offers a set of pre-compiled models (:ref:`off-the-shelf-models`), as well as Python scripts that enable developers to define and compile models using either existing architectures or create new ones with customized weights.
+Project Structure
+-----------------
+
+The project comprises three independent modules: model definition, model compilation, and runtimes.
+
+.. image:: _static/img/project-structure.svg
+   :width: 600
+   :align: center
+   :alt: Project Structure
+
+.. ➀➁➂➃➄➅➆➇➈➉
+.. ➊➋➌➍➎➏➐➑➒➓
+
+**➀ Model definition in Python.** MLC offers a variety of pre-defined architectures, such as Llama (e.g., Vicuna, OpenLlama, Llama, Wizard), GPT-NeoX (e.g., RedPajama, Dolly), RNNs (e.g., RWKV), and GPT-J (e.g., MOSS). Model developers could solely define the model in pure Python, without having to touch code generation and runtime.
+
+**➁ Model compilation in Python.** TVM Unity compiler are configured in pure python, and the compiled artifact can be exported as shared or static libraries. Performance experts can concentrate on compiler optimization to enhance the speed of LLMs on specific devices of interest.
+
+**➂ Platform-native runtimes.** MLCChat are provided as lightweight runtimes tailored for each platform, including **C++** for command line, **Javascript** for web, **Swift** for iOS, and **Java** for Android. App developers only need to familiarize themselves with the platform-naive runtimes to integrate MLC-compiled LLM into their applications.
+
+Docs by Usecases
+----------------
+
+**TODO** Verticals
 
 .. tabs ::
 
-   .. tab :: Run Compiled Model
+   .. tab :: ➂ Run Compiled Models
 
-      An MLC-compiled model is composed of two elements: weights and a library of CPU/GPU compute kernels. For easy integration and redistribution, MLC further offers platform-specific lightweight runtimes, with a user-friendly interface to interact with the compiled models.
+      MLCChat is a lightweight runtime designed to demonstrate how to integrate MLC-compiled LLMs:
 
-      .. tabs ::
+      - 🚧 CLI
+      - 🚧 WebLLM
+      - 🚧 iOS
+      - 🚧 Android
 
-         .. tab :: Command Line
+      Moreover, to incorporate MLC-compiled models without using MLCChat:
 
-            ``mlc_chat_cli`` is the CLI app provided to load the model weights and compute kernels.
+      - 🚧 Use MLC-compiled models in a C++ project
+      - 🚧 Use MLC-compiled models in a Javascript project
+      - 🚧 Use MLC-compiled models in an iOS project
+      - 🚧 Use MLC-compiled models in an Android project
 
-            - Demo: |mlc-cli-demo|
-            - Install or build the CLI app: :ref:`install-mlc-chat-cli`.
-            - Run compiled models via the CLI app: :ref:`CLI-run-model`.
+      **Note.** TVM Unity compiler is not a dependency to running any MLC-compiled model.
 
-            .. - Use MLC-compiled models in your own C++ project: TBA
+   .. tab :: ➁ Compile Models
 
-         .. tab :: Web Browser
+      TVM Unity is required to compile models. :ref:`Installation Guidelines <tvm-unity-install-prebuilt-package>`.
 
-            MLC compiles a model to WebGPU and WebAssembly, which can be executed by MLC LLM JavaScript runtime.
+      - 🚧 MLC LLM Build walkthrough
+      - 🚧 Compilation artifact specification
+      - 🚧 Configure hardware targets
+      - 🚧 Configure quantization formats
 
-            - Demo: |web-llm-demo|
-            - Set up WebLLM: `Web-LLM project <https://mlc.ai/web-llm/>`__.
-            - Use MLC-compiled models in your own JavaScript project: `Web-LLM NPM Package <https://www.npmjs.com/package/@mlc-ai/web-llm>`__.
+   .. tab :: ➀ Define Model Architectures
 
-         .. tab :: iOS
+      TVM Unity is required to define models. :ref:`Installation Guidelines <tvm-unity-install-prebuilt-package>`.
 
-            A model can be compiled to static system libraries and further linked to an iOS app. An example iOS app is provided with a clear structure that iOS developers could refer to ship LLMs in iOS.
+      - 🚧 Define new model architectures: :doc:`tutorials/bring-your-own-models`.
+      .. - 🚧 Contribute new models: :ref:`contribute-new-models`.
 
-            - Demo: |ios-demo|
-            - Set up iOS: `iOS <https://mlc.ai/mlc-llm/#iphone>`__.
+   .. tab :: MLC-Prebuilt LLMs
 
-            .. - Use MLC-compiled models in your own iOS app: TBD
+      - 🚧 Off-the-shelf prebuilt models: :ref:`off-the-shelf-models`
 
-         .. tab :: Android
-
-            A model can be compiled to static system libraries and further linked to an Android app. An example Android app is provided with a clear structure that Android developers could refer to ship LLMs in Android.
-
-            - Demo: |android-demo|
-            - Set up Android: `Android <https://mlc.ai/mlc-llm/#android>`__
-
-            .. - Use MLC-compiled models in your own Android app: TBD
-
-   .. tab :: Compile Models
-
-      MLC LLM is a Python package that uses TVM Unity to compile LLMs for universal deployment.
-
-      .. image:: https://mlc.ai/blog/img/redpajama/customization.svg
-
-      - Install TVM Unity: :ref:`Installation Guidelines <tvm-unity-install-prebuilt-package>`.
-      - Compile models: :doc:`tutorials/compile-models`.
-      - Contribute new models: :ref:`contribute-new-models`.
-
-      .. - MLC LLM Compilation: TBD
-      .. - Configuring build environments: TBD
-
-   .. tab :: Define Model Architectures
-
-      - Install TVM Unity: :ref:`Installation Guidelines <tvm-unity-install-prebuilt-package>`.
-      - Define new model architectures: :doc:`tutorials/bring-your-own-models`.
-      - Machine Learning Compilation Basics: `Machine Learning Compilation <https://mlc.ai/>`__
-      - Contribute new models: :ref:`contribute-new-models`.
+.. - Machine Learning Compilation Basics: `Machine Learning Compilation <https://mlc.ai/>`__
 
 
 .. toctree::
