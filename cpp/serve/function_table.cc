@@ -70,22 +70,14 @@ PackedFunc FunctionTable::SessionFuncAsPackedFunc(Session sess, DRef sess_func, 
 }
 
 void FunctionTable::Init(String reload_lib_path, Device device, picojson::object model_config,
-                         Optional<Session> session) {
+                         Optional<Session> session, int num_shards) {
   local_gpu_device = device;
   Device null_device{DLDeviceType(0), 0};
-  int num_shards;
-  {
-    if (model_config.count("tensor_parallel_shards")) {
-      CHECK(model_config["tensor_parallel_shards"].is<int64_t>());
-      num_shards = model_config["tensor_parallel_shards"].get<int64_t>();
-    } else {
-      num_shards = 1;
-    }
-  }
   this->model_config = model_config;
   this->cached_buffers = Map<String, ObjectRef>();
 
   if (num_shards > 1) {
+    ICHECK(session.defined());
     this->sess = session.value();
     this->use_disco = true;
     this->disco_mod = sess->CallPacked(sess->GetGlobalFunc("runtime.disco.load_vm_module"),
@@ -111,6 +103,7 @@ void FunctionTable::Init(String reload_lib_path, Device device, picojson::object
         ModelMetadata::FromModule(this->disco_mod->DebugGetFromRemote(0), std::move(model_config));
     this->_InitFunctions();
   } else {
+    ICHECK(!session.defined());
     Module executable{nullptr};
     PackedFunc fload_exec{nullptr};
     if (StartsWith(reload_lib_path, "system://")) {
@@ -145,6 +138,7 @@ void FunctionTable::Init(String reload_lib_path, Device device, picojson::object
     this->model_metadata_ = ModelMetadata::FromModule(this->local_vm, std::move(model_config));
     this->_InitFunctions();
   }
+  ICHECK_EQ(this->model_metadata_.tensor_parallel_shards, num_shards);
 }
 
 ObjectRef FunctionTable::LoadParams(const std::string& model_path, Device device) {
@@ -242,6 +236,8 @@ void FunctionTable::_InitFunctions() {
   this->kv_cache_begin_forward_func_ = get_global_func("vm.builtin.kv_state_begin_forward");
   this->kv_cache_end_forward_func_ = get_global_func("vm.builtin.kv_state_end_forward");
   this->kv_cache_popn_func_ = get_global_func("vm.builtin.kv_state_popn");
+  this->kv_cache_commit_accepted_token_tree_nodes_func_ =
+      get_global_func("vm.builtin.attention_kv_cache_commit_accepted_token_tree_nodes");
   this->kv_cache_get_num_available_pages_func_ =
       *tvm::runtime::Registry::Get("vm.builtin.attention_kv_cache_get_num_available_pages");
   this->kv_cache_get_total_sequence_length_func_ =

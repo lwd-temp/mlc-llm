@@ -1,9 +1,10 @@
 """The build script for mlc4j (MLC LLM and tvm4j)"""
 
 import argparse
+import json
 import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 from mlc_llm.support import logging
@@ -22,7 +23,7 @@ def run_cmake(mlc4j_path: Path):
     logger.info("Running cmake")
     # use pathlib so it is cross platform
     android_ndk_path = (
-        Path(os.environ['ANDROID_NDK']) / "build"/ "cmake"/ "android.toolchain.cmake"
+        Path(os.environ["ANDROID_NDK"]) / "build" / "cmake" / "android.toolchain.cmake"
     )
     cmd = [
         "cmake",
@@ -60,7 +61,7 @@ def run_cmake_build():
         "tvm4j_runtime_packed",
         "--config",
         "release",
-        f"-j{os.cpu_count()}"
+        f"-j{os.cpu_count()}",
     ]
     subprocess.run(cmd, check=True, env=os.environ)
 
@@ -93,7 +94,9 @@ def main(mlc_llm_source_dir: Path):
     if "TVM_SOURCE_DIR" in os.environ:
         logger.info('Set TVM_SOURCE_DIR to "%s"', os.environ["TVM_SOURCE_DIR"])
         with open("config.cmake", "w", encoding="utf-8") as file:
-            print("set(TVM_SOURCE_DIR ${%s})" % os.environ["TVM_SOURCE_DIR"], file=file)
+            # We use "json.dumps" to escape backslashes and quotation marks
+            tvm_source_dir_str_with_escape = json.dumps(os.environ["TVM_SOURCE_DIR"])
+            print("set(TVM_SOURCE_DIR %s)" % tvm_source_dir_str_with_escape, file=file)
 
     # - Run cmake, build and install
     run_cmake(mlc_llm_source_dir / "android" / "mlc4j")

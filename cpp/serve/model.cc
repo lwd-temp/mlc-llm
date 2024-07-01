@@ -27,9 +27,10 @@ class ModelImpl;
 TVM_REGISTER_OBJECT_TYPE(ModelObj);
 
 Model Model::Create(String reload_lib_path, String model_path, const picojson::object& model_config,
-                    DLDevice device, const Optional<Session>& session, bool trace_enabled) {
+                    DLDevice device, const Optional<Session>& session, int num_shards,
+                    bool trace_enabled) {
   return Model(make_object<ModelImpl>(reload_lib_path, model_path, model_config, device, session,
-                                      trace_enabled));
+                                      num_shards, trace_enabled));
 }
 
 Result<picojson::object> Model::LoadModelConfig(const String& model_path) {
@@ -56,14 +57,15 @@ class ModelImpl : public ModelObj {
    * \sa Model::Create
    */
   explicit ModelImpl(String reload_lib_path, String model_path, picojson::object model_config,
-                     DLDevice device, const Optional<Session>& session, bool trace_enabled)
+                     DLDevice device, const Optional<Session>& session, int num_shards,
+                     bool trace_enabled)
       : model_(model_path), device_(device) {
     // Step 1. Process model config json string.
     LoadModelConfigJSON(model_config);
     // Step 2. Initialize vm, we use the packed function mechanism
     // so there is no explicit abi dependency on these extra
     // classes other than basic tvm runtime.
-    this->ft_.Init(reload_lib_path, device_, model_config, session);
+    this->ft_.Init(reload_lib_path, device_, model_config, session, num_shards);
     // Step 3. Reset
     this->Reset();
     // Step 4. Set model type
@@ -450,7 +452,8 @@ class ModelImpl : public ModelObj {
   }
 
   NDArray BatchVerify(const ObjectRef& embeddings, const std::vector<int64_t>& seq_ids,
-                      const std::vector<int>& lengths) final {
+                      const std::vector<int>& lengths,
+                      const std::vector<int64_t>& token_tree_parent_ptr) final {
     CHECK(!seq_ids.empty());
     CHECK_EQ(seq_ids.size(), lengths.size());
     int num_sequences = seq_ids.size();
@@ -458,6 +461,7 @@ class ModelImpl : public ModelObj {
     for (int i = 0; i < num_sequences; ++i) {
       total_length += lengths[i];
     }
+    CHECK_EQ(total_length, token_tree_parent_ptr.size());
 
     NVTXScopedRange nvtx_scope("BatchVerify num_tokens=" + std::to_string(total_length));
 
@@ -471,7 +475,9 @@ class ModelImpl : public ModelObj {
     // Begin forward with the sequence ids and new lengths.
     IntTuple seq_ids_tuple(seq_ids);
     IntTuple lengths_tuple(lengths.begin(), lengths.end());
-    ft_.kv_cache_begin_forward_func_(kv_cache_, seq_ids_tuple, lengths_tuple);
+    IntTuple token_tree_parent_ptr_tuple(token_tree_parent_ptr);
+    ft_.kv_cache_begin_forward_func_(kv_cache_, seq_ids_tuple, lengths_tuple,
+                                     token_tree_parent_ptr_tuple);
 
     ObjectRef embeddings_dref_or_nd;
     if (!embeddings->IsInstance<DRefObj>()) {
@@ -512,7 +518,8 @@ class ModelImpl : public ModelObj {
 
   ObjectRef BatchVerifyToLastHidden(const ObjectRef& embeddings,
                                     const std::vector<int64_t>& seq_ids,
-                                    const std::vector<int>& lengths) final {
+                                    const std::vector<int>& lengths,
+                                    const std::vector<int64_t>& token_tree_parent_ptr) final {
     CHECK(!seq_ids.empty());
     CHECK_EQ(seq_ids.size(), lengths.size());
     int num_sequences = seq_ids.size();
@@ -520,6 +527,7 @@ class ModelImpl : public ModelObj {
     for (int i = 0; i < num_sequences; ++i) {
       total_length += lengths[i];
     }
+    CHECK_EQ(total_length, token_tree_parent_ptr.size());
     NVTXScopedRange nvtx_scope("BatchVerifyToLastHidden num_tokens=" +
                                std::to_string(total_length));
 
@@ -548,7 +556,9 @@ class ModelImpl : public ModelObj {
     // Begin forward with the sequence ids and new lengths.
     IntTuple seq_ids_tuple(seq_ids);
     IntTuple lengths_tuple(lengths.begin(), lengths.end());
-    ft_.kv_cache_begin_forward_func_(kv_cache_, seq_ids_tuple, lengths_tuple);
+    IntTuple token_tree_parent_ptr_tuple(token_tree_parent_ptr);
+    ft_.kv_cache_begin_forward_func_(kv_cache_, seq_ids_tuple, lengths_tuple,
+                                     token_tree_parent_ptr_tuple);
 
     // args: embeddings, logit_pos, kv_cache, params
     ObjectRef result = ft_.verify_to_last_hidden_func_(embeddings_dref_or_nd, kv_cache_, params_);
@@ -629,6 +639,13 @@ class ModelImpl : public ModelObj {
     ft_.kv_cache_popn_func_(kv_cache_, seq_id, num_tokens);
   }
 
+  void CommitAcceptedTokenTreeNodesToKVCache(
+      const std::vector<int64_t>& seq_ids,
+      const std::vector<int64_t>& accepted_leaf_indices) final {
+    ft_.kv_cache_commit_accepted_token_tree_nodes_func_(kv_cache_, IntTuple(seq_ids),
+                                                        IntTuple(accepted_leaf_indices));
+  }
+
   void EnableSlidingWindowForSeq(int64_t seq_id) final {
     if (this->kind == KVStateKind::kNone) {
       return;
@@ -644,7 +661,7 @@ class ModelImpl : public ModelObj {
   ModelMetadata GetMetadata() const final { return ft_.model_metadata_; }
 
   int GetNumAvailablePages() const final {
-    if (this->kind == KVStateKind::kRNNState) {
+    if (this->kind == KVStateKind::kRNNState || this->kind == KVStateKind::kNone) {
       // RNNState does not introduce new page at runtime
       return std::numeric_limits<int>::max();
     } else {

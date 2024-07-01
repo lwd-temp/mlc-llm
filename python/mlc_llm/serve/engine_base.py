@@ -111,7 +111,9 @@ def _parse_models(
 
 
 def _process_model_args(
-    models: List[ModelInfo], device: tvm.runtime.Device
+    models: List[ModelInfo],
+    device: tvm.runtime.Device,
+    engine_config: EngineConfig,
 ) -> Tuple[List[Tuple[str, str]], List[str], Conversation]:
     """Process the input ModelInfo to get the engine initialization arguments."""
     conversation: Optional[Conversation] = None
@@ -149,9 +151,18 @@ def _process_model_args(
             # so the engine do not have to depend on compilation
             from mlc_llm.interface import jit  # pylint: disable=import-outside-toplevel
 
+            model_compile_overrides = {
+                "context_window_size": engine_config.max_single_sequence_length,
+                "prefill_chunk_size": engine_config.prefill_chunk_size,
+                "sliding_window_size": engine_config.sliding_window_size,
+                "attention_sink_size": engine_config.attention_sink_size,
+                "tensor_parallel_shards": engine_config.tensor_parallel_shards,
+                "max_batch_size": engine_config.max_num_sequence,
+            }
+
             model_lib = jit.jit(
                 model_path=model_path,
-                overrides={},
+                overrides=model_compile_overrides,
                 device=device,
             ).model_lib_path
         return str(model_path), model_lib
@@ -267,6 +278,7 @@ def _query_engine_metrics(engine):
 async def _async_query_engine_metrics(engine):
     """Query engine metrics via debug options"""
     dummy_message = {"role": "user", "context": ""}
+    result = None
     async for response in await engine.chat.completions.create(
         messages=[dummy_message],
         model="model",
@@ -275,7 +287,11 @@ async def _async_query_engine_metrics(engine):
         extra_body={"debug_config": {"special_request": "query_engine_metrics"}},
     ):
         if response.usage is not None:
-            return EngineMetrics(response.usage.extra)
+            assert result is None
+            result = EngineMetrics(response.usage.extra)
+
+    if result is not None:
+        return result
     raise RuntimeError("query_engine metrics did not get metrics back")
 
 
@@ -499,7 +515,7 @@ class EngineState:
             outputs = []
             for stream_output, text_streamer in zip(stream_outputs, text_streamers):
                 self.record_event(request_id, event="start detokenization")
-                delta_text = (
+                delta_text = stream_output.extra_prefix_string + (
                     text_streamer.put(stream_output.delta_token_ids)
                     if len(stream_output.delta_token_ids) > 0
                     else ""
@@ -570,7 +586,7 @@ class MLCEngineBase:  # pylint: disable=too-many-instance-attributes,too-few-pub
             model_args,
             model_config_paths,
             self.conv_template,
-        ) = _process_model_args(models, device)
+        ) = _process_model_args(models, device, engine_config)
 
         # - Load the raw model config into dict
         self.model_config_dicts = []
@@ -862,12 +878,13 @@ def process_chat_completion_stream_output(  # pylint: disable=too-many-arguments
     return response
 
 
-def process_completion_request(
+def process_completion_request(  # pylint: disable=too-many-arguments
     request: openai_api_protocol.CompletionRequest,
     request_id: str,
     engine_state: EngineState,
     tokenizer: Tokenizer,
     max_input_sequence_length: int,
+    conv_template: Conversation,
 ) -> Tuple[List[int], GenerationConfig, int, Optional[openai_api_protocol.CompletionResponse]]:
     """Process the given CompletionRequest, apply request validity
     checks, and return the processed prompts, and other info.
@@ -888,6 +905,9 @@ def process_completion_request(
 
     max_input_sequence_length : int
         The maximum allowed total prompt length.
+
+    conv_template : Conversation
+        The conversation template of the model.
 
     Returns
     -------
@@ -917,7 +937,11 @@ def process_completion_request(
     assert isinstance(prompt, list)
 
     # Process generation config. Create request id.
-    generation_cfg = engine_utils.get_generation_config(request)
+    generation_cfg = engine_utils.get_generation_config(
+        request,
+        extra_stop_token_ids=conv_template.stop_token_ids,
+        extra_stop_str=conv_template.stop_str,
+    )
 
     # - Echo back the prompt.
     echo_response = None

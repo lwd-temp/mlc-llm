@@ -97,7 +97,12 @@ class SyncMLCEngine:
         # - Check the fields fields of `engine_config`.
         if engine_config is None:
             engine_config = EngineConfig()
-        _check_engine_config(model, model_lib, mode, engine_config)
+        _check_engine_config(
+            model,
+            model_lib,
+            mode,
+            engine_config,
+        )
 
         # - Initialize model loading info.
         models = _parse_models(model, model_lib, engine_config.additional_models)
@@ -108,7 +113,7 @@ class SyncMLCEngine:
             model_args,
             model_config_paths,
             self.conv_template,
-        ) = _process_model_args(models, device)
+        ) = _process_model_args(models, device, engine_config)
 
         # - Load the raw model config into dict
         self.model_config_dicts = []
@@ -241,7 +246,7 @@ class SyncMLCEngine:
                         assert stream_output.delta_logprob_json_strs is not None
                         output_logprobs_str[rid][i] += stream_output.delta_logprob_json_strs
 
-                    delta_text = (
+                    delta_text = stream_output.extra_prefix_string + (
                         text_streamer.put(stream_output.delta_token_ids)
                         if len(stream_output.delta_token_ids) > 0
                         else ""

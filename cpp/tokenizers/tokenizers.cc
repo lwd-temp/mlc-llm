@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 
 #include "./../support/encoding.h"
 #include "./../support/load_bytes_from_file.h"
@@ -32,7 +33,7 @@ String TokenizerInfoNode::AsJSONString() const {
   return picojson::value(obj).serialize(false);
 }
 
-TokenizerInfo TokenizerInfo::FromJSON(String json_string) {
+TokenizerInfo TokenizerInfo::FromJSONString(String json_string) {
   picojson::value v;
   std::string err = picojson::parse(v, json_string.operator std::string());
   ICHECK(err.empty()) << "Failed to parse JSON: " << err;
@@ -70,6 +71,20 @@ std::vector<int32_t> TokenizerObj::Encode(const std::string& text) const {
   return tokenizer->Encode(text);
 }
 
+std::vector<int32_t> TokenizerObj::EncodeNoPrependSpace(const std::string& text) const {
+  // TODO(yixin): now this only supports tokenizers with tokenizer.json
+  // other tokenizers should be supported.
+  static const constexpr char* kPaddingPrefix = "\x01";
+  if (!info_->prepend_space_in_encode) {
+    return tokenizer->Encode(text);
+  }
+
+  auto result = tokenizer->Encode(kPaddingPrefix + text);
+  // remove the first two tokens: "▁" and "<0x01>"
+  result.erase(result.begin(), result.begin() + 2);
+  return result;
+}
+
 std::vector<std::vector<int32_t>> TokenizerObj::EncodeBatch(const Array<String>& texts) const {
   std::vector<std::string> texts_vec;
   for (const String& text : texts) {
@@ -80,6 +95,35 @@ std::vector<std::vector<int32_t>> TokenizerObj::EncodeBatch(const Array<String>&
 
 std::string TokenizerObj::Decode(const std::vector<int32_t>& token_ids) const {
   return tokenizer->Decode(token_ids);
+}
+
+const DynamicBitset& TokenizerObj::GetPrefixTokenMask() {
+  if (prefix_token_mask_.Size() != 0) {
+    return prefix_token_mask_;
+  }
+
+  int vocab_size = GetVocabSize();
+  prefix_token_mask_ = DynamicBitset(vocab_size);
+
+  // Sort all tokens
+  const auto& token_table = PostProcessedTokenTable();
+  std::vector<std::pair<std::string, int>> sorted_tokens;
+  for (int32_t token_id = 0; token_id < vocab_size; ++token_id) {
+    sorted_tokens.emplace_back(token_table[token_id], token_id);
+  }
+  std::sort(sorted_tokens.begin(), sorted_tokens.end());
+
+  // Check every token if it is a prefix of another token
+  for (int idx = 0; idx < vocab_size - 1; ++idx) {
+    auto cur_token = sorted_tokens[idx].first;
+    auto nxt_token = sorted_tokens[idx + 1].first;
+    if (cur_token.length() <= nxt_token.length() &&
+        std::string_view(nxt_token).substr(0, cur_token.length()) == cur_token) {
+      prefix_token_mask_.Set(sorted_tokens[idx].second);
+    }
+  }
+
+  return prefix_token_mask_;
 }
 
 size_t TokenizerObj::GetVocabSize() const { return tokenizer->GetVocabSize(); }
@@ -103,30 +147,18 @@ Tokenizer Tokenizer::FromPath(const String& _path, std::optional<TokenizerInfo> 
     sentencepiece = path / "tokenizer.model";
     huggingface = path / "tokenizer.json";
     rwkvworld = path / "tokenizer_model";
-    // Check ByteLevelBPE
-    {
-      std::filesystem::path merges_path = path / "merges.txt";
-      std::filesystem::path vocab_path = path / "vocab.json";
-      std::filesystem::path added_tokens_path = path / "added_tokens.json";
-      if (std::filesystem::exists(merges_path) && std::filesystem::exists(vocab_path) &&
-          std::filesystem::exists(added_tokens_path)) {
-        std::string vocab = LoadBytesFromFile(vocab_path.string());
-        std::string merges = LoadBytesFromFile(merges_path.string());
-        std::string added_tokens = LoadBytesFromFile(added_tokens_path.string());
-        return Tokenizer(tokenizers::Tokenizer::FromBlobByteLevelBPE(vocab, merges, added_tokens),
-                         info_value);
-      }
-    }
   } else {
     sentencepiece = path.parent_path() / "tokenizer.model";
     huggingface = path.parent_path() / "tokenizer.json";
     rwkvworld = path.parent_path() / "tokenizer_model";
   }
   if (std::filesystem::exists(huggingface)) {
+    // Check HuggingFace
     return Tokenizer(tokenizers::Tokenizer::FromBlobJSON(LoadBytesFromFile(huggingface.string())),
                      info_value);
   }
   if (std::filesystem::exists(sentencepiece)) {
+    // Check SentencePiece
     LOG(WARNING)
         << "Using `tokenizer.model` since we cannot locate `tokenizer.json`.\n"
         << "It is recommended to use `tokenizer.json` to ensure all token mappings are included, "
@@ -137,7 +169,23 @@ Tokenizer Tokenizer::FromPath(const String& _path, std::optional<TokenizerInfo> 
         tokenizers::Tokenizer::FromBlobSentencePiece(LoadBytesFromFile(sentencepiece.string())),
         info_value);
   }
+  {
+    // Check ByteLevelBPE
+    std::filesystem::path merges_path = path / "merges.txt";
+    std::filesystem::path vocab_path = path / "vocab.json";
+    std::filesystem::path added_tokens_path = path / "added_tokens.json";
+    if (std::filesystem::exists(merges_path) && std::filesystem::exists(vocab_path) &&
+        std::filesystem::exists(added_tokens_path)) {
+      LOG(INFO) << "come here";
+      std::string vocab = LoadBytesFromFile(vocab_path.string());
+      std::string merges = LoadBytesFromFile(merges_path.string());
+      std::string added_tokens = LoadBytesFromFile(added_tokens_path.string());
+      return Tokenizer(tokenizers::Tokenizer::FromBlobByteLevelBPE(vocab, merges, added_tokens),
+                       info_value);
+    }
+  }
   if (std::filesystem::exists(rwkvworld)) {
+    // Check RWKV
     return Tokenizer(tokenizers::Tokenizer::FromBlobRWKVWorld(rwkvworld.string()), info_value);
   }
   LOG(FATAL) << "Cannot find any tokenizer under: " << _path;
@@ -153,7 +201,7 @@ TokenizerInfo Tokenizer::DetectTokenizerInfo(const String& path_str) {
   if (!std::filesystem::exists(path)) {
     LOG(WARNING) << "Tokenizer info is not detected as tokenizer.json is not found. The default "
                  << "tokenizer info will be used.";
-    return TokenizerInfo();
+    return TokenizerInfo(make_object<TokenizerInfoNode>());
   }
 
   std::string tokenizer_json = LoadBytesFromFile(path.string());
@@ -428,7 +476,7 @@ TVM_REGISTER_GLOBAL("mlc.tokenizers.TokenizerEncodeBatch")
       return ret;
     });
 
-TVM_REGISTER_GLOBAL("mlc.TokenizerDecode")
+TVM_REGISTER_GLOBAL("mlc.tokenizers.TokenizerDecode")
     .set_body_typed([](const Tokenizer& tokenizer, const IntTuple& token_ids) {
       return tokenizer->Decode({token_ids->data, token_ids->data + token_ids->size});
     });

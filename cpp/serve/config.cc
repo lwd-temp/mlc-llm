@@ -77,6 +77,15 @@ Result<DebugConfig> DebugConfig::FromJSON(const picojson::object& config) {
       return TResult::Error("Uknown special request " + special_request);
     }
   }
+  std::string grammar_execution_mode =
+      json::LookupOrDefault<std::string>(config, "grammar_execution_mode", "jump_forward");
+  if (grammar_execution_mode == "jump_forward") {
+    res.grammar_execution_mode = GrammarExecutionMode::kJumpForward;
+  } else if (grammar_execution_mode == "constraint") {
+    res.grammar_execution_mode = GrammarExecutionMode::kConstraint;
+  } else {
+    return TResult::Error("Uknown grammar execution mode " + grammar_execution_mode);
+  }
   return TResult::Ok(res);
 }
 
@@ -94,6 +103,16 @@ picojson::object DebugConfig::AsJSON() const {
     }
     case SpecialRequestKind::kNone:
       break;
+  }
+  switch (grammar_execution_mode) {
+    case GrammarExecutionMode::kJumpForward: {
+      config["grammar_execution_mode"] = picojson::value("jump_forward");
+      break;
+    }
+    case GrammarExecutionMode::kConstraint: {
+      config["grammar_execution_mode"] = picojson::value("constraint");
+      break;
+    }
   }
   return config;
 }
@@ -615,8 +634,11 @@ Result<MemUsageEstimationResult> EstimateMemoryUsageOnMode(
            model_config_limits.model_max_sliding_window_size});
     } else {
       inferred_config.max_total_sequence_length =
-          std::min(model_max_total_sequence_length,
-                   max_num_sequence * model_config_limits.model_max_single_sequence_length);
+          model_config_limits.model_max_single_sequence_length ==
+                  std::numeric_limits<int64_t>::max()
+              ? model_max_total_sequence_length
+              : std::min(model_max_total_sequence_length,
+                         max_num_sequence * model_config_limits.model_max_single_sequence_length);
     }
     os << "max KV cache token capacity will be set to "
        << inferred_config.max_total_sequence_length.value() << ", ";

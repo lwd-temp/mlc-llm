@@ -5,8 +5,8 @@
  * logic of the grammar-guided generation.
  */
 
-#ifndef MLC_LLM_SERVE_GRAMMAR_GRAMMAR_STATE_MATCHER_H_
-#define MLC_LLM_SERVE_GRAMMAR_GRAMMAR_STATE_MATCHER_H_
+#ifndef MLC_LLM_GRAMMAR_GRAMMAR_STATE_MATCHER_H_
+#define MLC_LLM_GRAMMAR_GRAMMAR_STATE_MATCHER_H_
 
 #include <tvm/runtime/object.h>
 #include <tvm/runtime/registry.h>
@@ -65,7 +65,7 @@ class GrammarStateMatcherNode : public Object {
    * FindNextTokenMask operations can be performed. The termination state can be canceled
    * using Rollback().
    */
-  virtual bool AcceptToken(int32_t token_id) = 0;
+  virtual bool AcceptToken(int32_t token_id, bool verbose = false) = 0;
 
   /*!
    * \brief Find the set of tokens that are acceptable for the next step and store them in a
@@ -74,6 +74,13 @@ class GrammarStateMatcherNode : public Object {
    * and its shape needs to be (ceil(vocab_size, 32),), with a dtype of uint32.
    */
   virtual void FindNextTokenBitmask(DLTensor* next_token_bitmask) = 0;
+
+  /*!
+   * \brief Find the jump-forward string for jump-forward decoding. This is the longest string that
+   will be valid according to the current syntax.
+   * \note This method does not change the grammar state.
+   */
+  virtual std::string FindJumpForwardString() = 0;
 
   /*!
    * \brief Rollback the matcher to a previous state.
@@ -172,4 +179,4 @@ class GrammarInitContextCache : public ObjectRef {
 }  // namespace llm
 }  // namespace mlc
 
-#endif  // MLC_LLM_SERVE_GRAMMAR_GRAMMAR_STATE_MATCHER_H_
+#endif  // MLC_LLM_GRAMMAR_GRAMMAR_STATE_MATCHER_H_

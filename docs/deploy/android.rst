@@ -14,7 +14,7 @@ The demo APK below is built for Samsung S23 with Snapdragon 8 Gen 2 chip.
 
 .. image:: https://seeklogo.com/images/D/download-android-apk-badge-logo-D074C6882B-seeklogo.com.png
   :width: 135
-  :target: https://github.com/mlc-ai/binary-mlc-llm-libs/releases/download/Android-05282024/mlc-chat.apk
+  :target: https://github.com/mlc-ai/binary-mlc-llm-libs/releases/download/Android-06072024/mlc-chat.apk
 
 Prerequisite
 ------------
@@ -55,7 +55,9 @@ Please ensure that the JDK versions for Android Studio and JAVA_HOME are the sam
 
 - ``export TVM_SOURCE_DIR=/path/to/mlc-llm/3rdparty/tvm``.
 
-(Optional) **TVM Unity compiler** Python package (:ref:`install <tvm-unity-prebuilt-package>` or :ref:`build from source <tvm-unity-build-from-source>`). It is *NOT* required if models are prebuilt, but to compile PyTorch models from HuggingFace in the following section, the compiler is a must-dependency.
+Please follow :doc:`/install/mlc_llm` to obtain a binary build of mlc_llm package. Note that this
+is independent from mlc-llm source code that we use for android package build in the following up section.
+Once you installed this package, you do not need to build mlc llm from source.
 
 .. note::
     ❗ Whenever using Python, it is highly recommended to use **conda** to manage an isolated Python environment to avoid missing dependencies, incompatible versions, and package conflicts.
@@ -180,7 +182,7 @@ This library packages the dependent model libraries and necessary runtime to exe
 
    We leverage a local JIT cache to avoid repetitive compilation of the same input.
    However, sometimes it is helpful to force rebuild when we have a new compiler update
-   or when something goes wrong with the ached library.
+   or when something goes wrong with the cached library.
    You can do so by setting the environment variable ``MLC_JIT_POLICY=REDO``
 
    .. code:: bash
@@ -191,7 +193,7 @@ This library packages the dependent model libraries and necessary runtime to exe
 Step 3. Build Android App
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Open folder ``./android`` as an Android Studio Project.
+Open folder ``./android/MLCChat`` as an Android Studio Project.
 Connect your Android device to your machine.
 In the menu bar of Android Studio, click **"Build → Make Project"**.
 Once the build is finished, click **"Run → Run 'app'"** and you will see the app launched on your phone.

@@ -22,7 +22,6 @@ class GemmaConfig(ConfigBase):  # pylint: disable=too-many-instance-attributes
     """Configuration of the Gemma model."""
 
     hidden_size: int
-    hidden_act: str
     intermediate_size: int
     attention_bias: bool
     num_attention_heads: int
@@ -31,6 +30,7 @@ class GemmaConfig(ConfigBase):  # pylint: disable=too-many-instance-attributes
     num_hidden_layers: int
     rms_norm_eps: float
     vocab_size: int
+    hidden_activation: Optional[str] = None
     position_embedding_base: int = 0
     context_window_size: int = 0
     prefill_chunk_size: int = 0
@@ -39,7 +39,9 @@ class GemmaConfig(ConfigBase):  # pylint: disable=too-many-instance-attributes
     kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
-        if self.hidden_act not in ("gelu", "gelu_pytorch_tanh"):
+        if self.hidden_activation is None:
+            self.hidden_activation = self.kwargs.get("hidden_act", None)
+        if self.hidden_activation not in ("gelu", "gelu_pytorch_tanh"):
             raise ValueError("Only GeLU is supported as the activation for gemma.")
         if self.attention_bias:
             raise ValueError('Only "False" attention_bias is supported for gemma')
@@ -61,7 +63,7 @@ class GemmaConfig(ConfigBase):  # pylint: disable=too-many-instance-attributes
                     break
             else:
                 raise ValueError(
-                    "Unable to determine the maxmimum sequence length, because none of "
+                    "Unable to determine the maximum sequence length, because none of "
                     "`context_window_size`, `max_position_embeddings` or `max_sequence_length` is "
                     "provided in `config.json`."
                 )
@@ -102,6 +104,11 @@ class GemmaEmbedding(nn.Embedding):
 class GemmaMLP(nn.Module):
     def __init__(self, config: GemmaConfig):
         super().__init__()
+        if config.intermediate_size % config.tensor_parallel_shards != 0:
+            raise ValueError(
+                f"Cannot split MLP intermediate size {config.intermediate_size} "
+                f"evenly to {config.tensor_parallel_shards} GPUs."
+            )
         self.intermediate_size = config.intermediate_size // config.tensor_parallel_shards
         self.gate_up_proj = nn.Linear(
             in_features=config.hidden_size,

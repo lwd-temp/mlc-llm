@@ -229,7 +229,7 @@ class JSONFFIEngine:
         if isinstance(device, str):
             device = detect_device(device)
         assert isinstance(device, tvm.runtime.Device)
-        model_args = _process_model_args(models, device)[0]
+        model_args = _process_model_args(models, device, engine_config)[0]
 
         # - Load the raw model config into dict
         for i, model_info in enumerate(models):

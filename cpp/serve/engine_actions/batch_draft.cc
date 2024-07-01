@@ -99,9 +99,9 @@ class BatchDraftActionObj : public EngineActionObj {
         input_tokens.clear();
         for (int i = 0; i < num_rsentries; ++i) {
           // The first draft proposal uses the last committed token.
-          input_tokens.push_back(
-              draft_id == 0 ? mstates[i]->committed_tokens.back().sampled_token_id.first
-                            : mstates[i]->draft_output_tokens.back().sampled_token_id.first);
+          input_tokens.push_back(draft_id == 0
+                                     ? mstates[i]->committed_tokens.back().GetTokenId()
+                                     : mstates[i]->draft_output_tokens.back().GetTokenId());
         }
 
         // - Compute embeddings.
@@ -142,7 +142,8 @@ class BatchDraftActionObj : public EngineActionObj {
         models_[model_id]->ScatterDraftProbs(probs_on_device, draft_token_slots_,
                                              &model_workspaces_[0].draft_probs_storage);
         for (int i = 0; i < num_rsentries; ++i) {
-          mstates[i]->AddDraftToken(sample_results[i], draft_token_slots_[i]);
+          int64_t parent_idx = static_cast<int64_t>(mstates[i]->draft_output_tokens.size()) - 1;
+          mstates[i]->AddDraftToken(sample_results[i], draft_token_slots_[i], parent_idx);
         }
 
         auto tdraft_end = std::chrono::high_resolution_clock::now();
